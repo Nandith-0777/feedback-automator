@@ -15,24 +15,56 @@ function makeStream() {
 
 async function erpApiCall(path, params, sid) {
   const url = `https://erp.vidyaacademy.ac.in/web${path}`;
-  const payload = { jsonrpc: "2.0", method: "call", params };
-  const headers = { Cookie: `sid=${sid}` };
+  const payload = {
+    jsonrpc: "2.0",
+    method: "call",
+    params,
+  };
 
-  const response = await axios.post(url, payload, { headers });
+  const headers = {
+    Cookie: `sid=${sid}`,
+  };
 
-  if (response.data.error) {
-    console.error(
-      "Server Error Details:",
-      JSON.stringify(response.data.error, null, 2)
-    );
-    throw new Error(response.data.error.message);
+  try {
+    const response = await axios.post(url, payload, { headers });
+
+    if (response.data.error) {
+      const error = response.data.error;
+
+      console.error("========== ERP SERVER ERROR ==========");
+      console.error("Path:", path);
+      console.error(
+        "Full ERP error:",
+        JSON.stringify(error, null, 2)
+      );
+      console.error("======================================");
+
+      const errorMessage =
+        error?.data?.message ||
+        error?.data?.debug ||
+        error?.message ||
+        "Unknown OpenERP Server Error";
+
+      throw new Error(`${path}: ${errorMessage}`);
+    }
+
+    return response.data.result;
+  } catch (error) {
+    if (error.response) {
+      console.error(
+        "ERP HTTP ERROR:",
+        error.response.status,
+        error.response.data
+      );
+    }
+
+    throw error;
   }
-
-  return response.data.result;
 }
 
 async function login(username, password) {
-  const url = "https://erp.vidyaacademy.ac.in/web/session/authenticate";
+  const url =
+    "https://erp.vidyaacademy.ac.in/web/session/authenticate";
 
   const payload = {
     jsonrpc: "2.0",
@@ -57,12 +89,18 @@ async function login(username, password) {
 
       const { session_id, uid } = result.result;
 
-      return { sid, session_id, uid };
+      return {
+        sid,
+        session_id,
+        uid,
+      };
     } else {
       throw new Error("Incorrect username or password.");
     }
   } catch (error) {
-    throw new Error("Failed to log in. Please check your credentials.");
+    throw new Error(
+      "Failed to log in. Please check your credentials."
+    );
   }
 }
 
@@ -121,7 +159,9 @@ async function automateFeedback(
   const gt_batch_id = batchIdResult[0].gt_batch_id[0];
   const batchName = batchIdResult[0].gt_batch_id[1];
 
-  logs.push(`    Found Batch: ${batchName} (ID: ${gt_batch_id})`);
+  logs.push(
+    `    Found Batch: ${batchName} (ID: ${gt_batch_id})`
+  );
 
   await emit({
     type: "status",
@@ -160,10 +200,14 @@ async function automateFeedback(
     sid
   );
 
-  const latestSemester = semestersResult[semestersResult.length - 1];
+  const latestSemester =
+    semestersResult[semestersResult.length - 1];
+
   const semesterId = latestSemester.semester[0];
 
-  logs.push(`    Found latest semester: ${latestSemester.semester[1]}`);
+  logs.push(
+    `    Found latest semester: ${latestSemester.semester[1]}`
+  );
 
   await emit({
     type: "status",
@@ -209,14 +253,20 @@ async function automateFeedback(
     );
   }
 
-  const latestConfig = configResult.reduce((latest, current) => {
-    return current.config_id[0] > latest.config_id[0] ? current : latest;
-  });
+  const latestConfig = configResult.reduce(
+    (latest, current) => {
+      return current.config_id[0] > latest.config_id[0]
+        ? current
+        : latest;
+    }
+  );
 
   const configId = latestConfig.config_id[0];
   const configName = latestConfig.config_id[1];
 
-  logs.push(`    Found latest config: ${configName} (ID: ${configId})`);
+  logs.push(
+    `    Found latest config: ${configName} (ID: ${configId})`
+  );
 
   await emit({
     type: "status",
@@ -238,7 +288,12 @@ async function automateFeedback(
     "/dataset/search_read",
     {
       model,
-      fields: ["id", "employeename", "course", "state"],
+      fields: [
+        "id",
+        "employeename",
+        "course",
+        "state",
+      ],
       domain: [
         ["config_id", "=", configId],
         ["state", "=", "draft"],
@@ -254,7 +309,9 @@ async function automateFeedback(
   const feedbackRecords = pendingFeedbacks.records;
 
   if (!feedbackRecords.length) {
-    logs.push("🎉 No pending feedback forms found. You are all done!");
+    logs.push(
+      "🎉 No pending feedback forms found. You are all done!"
+    );
 
     await emit({
       type: "status",
@@ -290,24 +347,32 @@ async function automateFeedback(
     const faculties = feedbackRecords.map((record) => ({
       id: record.id,
       name: record.employeename,
-      course: Array.isArray(record.course) ? record.course[1] : "",
+      course: Array.isArray(record.course)
+        ? record.course[1]
+        : "",
     }));
 
     await emit({
       type: "need_ratings",
-      faculties: faculties,
+      faculties,
     });
 
     return {
       needsRatings: true,
-      credentials: { sid, session_id, uid },
+      credentials: {
+        sid,
+        session_id,
+        uid,
+      },
       configId,
       gt_batch_id,
       semesterId,
     };
   }
 
-  logs.push("5) Submitting feedback for each teacher...");
+  logs.push(
+    "5) Submitting feedback for each teacher..."
+  );
 
   await emit({
     type: "status",
@@ -319,22 +384,37 @@ async function automateFeedback(
   });
 
   let completed = 0;
+  let failed = 0;
 
   for (const record of feedbackRecords) {
     try {
-      const { id: feedbackId, employeename, course } = record;
-      const courseName = Array.isArray(course) ? course[1] : "";
+      const {
+        id: feedbackId,
+        employeename,
+        course,
+      } = record;
+
+      const courseName = Array.isArray(course)
+        ? course[1]
+        : "";
 
       logs.push(
         `   -> Submitting for ${employeename} (${courseName})...`
       );
 
+      /*
+       * STEP 1:
+       * Read the feedback form and get its question IDs.
+       */
       const formDetails = await erpApiCall(
         "/dataset/call_kw",
         {
           model,
           method: "read",
-          args: [[feedbackId], ["questions_line"]],
+          args: [
+            [feedbackId],
+            ["questions_line"],
+          ],
           kwargs: {
             context: kwArgsContext,
           },
@@ -344,7 +424,8 @@ async function automateFeedback(
         sid
       );
 
-      const questionIds = formDetails[0]?.questions_line || [];
+      const questionIds =
+        formDetails[0]?.questions_line || [];
 
       const markState =
         feedbackMode === "custom"
@@ -360,24 +441,48 @@ async function automateFeedback(
       };
 
       logs.push(
-        `       Rating: ${ratingLabels[markState] || markState}`
+        `       Rating: ${
+          ratingLabels[markState] || markState
+        }`
       );
 
-      const answersPayload = questionIds.map((qid) => [
-        1,
-        qid,
-        {
-          mark_state: markState,
-        },
-      ]);
+      /*
+       * STEP 2:
+       * Build the answers payload.
+       */
+      const answersPayload = questionIds.map(
+        (qid) => [
+          1,
+          qid,
+          {
+            mark_state: markState,
+          },
+        ]
+      );
 
+      /*
+       * STEP 3:
+       * Write the selected rating.
+       */
       if (answersPayload.length > 0) {
+        logs.push(
+          `       Writing ${answersPayload.length} question answers...`
+        );
+
         await erpApiCall(
           "/dataset/call_kw",
           {
             model,
             method: "write",
-            args: [[feedbackId], { questions_line: answersPayload }],
+            args: [
+              [
+                feedbackId,
+              ],
+              {
+                questions_line:
+                  answersPayload,
+              },
+            ],
             kwargs: {
               context: kwArgsContext,
             },
@@ -386,23 +491,44 @@ async function automateFeedback(
           },
           sid
         );
+
+        logs.push(
+          "       ✓ Rating written successfully."
+        );
+      } else {
+        logs.push(
+          "       ⚠️ No question IDs found for this form."
+        );
       }
+
+      /*
+       * STEP 4:
+       * Submit the feedback form.
+       */
+      logs.push(
+        "       Submitting feedback form..."
+      );
 
       await erpApiCall(
         "/dataset/call_button",
         {
           model,
           method: "button_submit",
-          args: [[feedbackId], kwArgsContext],
+          args: [
+            [feedbackId],
+            kwArgsContext,
+          ],
           session_id,
           context: topLevelContext,
         },
         sid
       );
 
-      completed += 1;
+      logs.push(
+        "       ✓ Feedback form submitted successfully."
+      );
 
-      logs[logs.length - 1] += " Done.";
+      completed += 1;
 
       const percent = Math.round(
         (completed / feedbackRecords.length) * 100
@@ -417,23 +543,52 @@ async function automateFeedback(
         message: `Submitted ${employeename} (${courseName})`,
       });
     } catch (err) {
+      failed += 1;
+
+      const errorMessage =
+        err?.message ||
+        "Unknown submission error";
+
       logs.push(
-        `   -> Error submitting for ${record.employeename}: ${err.message}`
+        `   -> ❌ Error submitting for ${record.employeename}: ${errorMessage}`
       );
 
       await emit({
         type: "status",
         step: "submit",
-        message: `Error with ${record.employeename}: ${err.message}`,
+        progress: Math.round(
+          ((completed + failed) /
+            feedbackRecords.length) *
+            100
+        ),
+        total: feedbackRecords.length,
+        completed,
+        message: `Error with ${record.employeename}: ${errorMessage}`,
       });
     }
   }
 
-  logs.push("✅ All feedback submitted successfully!");
+  /*
+   * IMPORTANT:
+   * Only show success if every form actually succeeded.
+   */
+  if (failed === 0) {
+    logs.push(
+      "✅ All feedback submitted successfully!"
+    );
+  } else {
+    logs.push(
+      `⚠️ Submission finished: ${completed} succeeded, ${failed} failed.`
+    );
+  }
 }
 
 export async function POST(request) {
-  const { stream, writer, send } = makeStream();
+  const {
+    stream,
+    writer,
+    send,
+  } = makeStream();
 
   let body;
 
@@ -461,7 +616,8 @@ export async function POST(request) {
   if (!username || !password) {
     return new Response(
       JSON.stringify({
-        error: "Username and password are required.",
+        error:
+          "Username and password are required.",
       }),
       {
         status: 400,
@@ -480,9 +636,14 @@ export async function POST(request) {
         message: "Logging in...",
       });
 
-      const credentials = await login(username, password);
+      const credentials = await login(
+        username,
+        password
+      );
 
-      logs.push("✓ Login Successful.");
+      logs.push(
+        "✓ Login Successful."
+      );
 
       await send({
         type: "status",
@@ -505,18 +666,22 @@ export async function POST(request) {
         });
       };
 
-      const result = await automateFeedback(
-        credentials.sid,
-        credentials.session_id,
-        credentials.uid,
-        logs,
-        emit,
-        feedbackMode,
-        rating,
-        facultyRatings
-      );
+      const result =
+        await automateFeedback(
+          credentials.sid,
+          credentials.session_id,
+          credentials.uid,
+          logs,
+          emit,
+          feedbackMode,
+          rating,
+          facultyRatings
+        );
 
-      if (result && result.needsRatings) {
+      if (
+        result &&
+        result.needsRatings
+      ) {
         return;
       }
 
@@ -525,7 +690,9 @@ export async function POST(request) {
         logs,
       });
     } catch (error) {
-      logs.push(`❌ An error occurred: ${error.message}`);
+      logs.push(
+        `❌ An error occurred: ${error.message}`
+      );
 
       await send({
         type: "error",
@@ -539,8 +706,10 @@ export async function POST(request) {
 
   return new Response(stream, {
     headers: {
-      "Content-Type": "application/x-ndjson",
-      "Cache-Control": "no-cache, no-transform",
+      "Content-Type":
+        "application/x-ndjson",
+      "Cache-Control":
+        "no-cache, no-transform",
       Connection: "keep-alive",
     },
   });
