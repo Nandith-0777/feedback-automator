@@ -1,9 +1,9 @@
 "use client";
+
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Progress } from "@/components/ui/progress";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import {
   Terminal,
@@ -111,7 +111,9 @@ export default function HomePage() {
 
       for (const line of lines) {
         if (!line.trim()) continue;
+
         let evt;
+
         try {
           evt = JSON.parse(line);
         } catch {
@@ -120,6 +122,7 @@ export default function HomePage() {
 
         if (evt.type === "status") {
           updateStep(evt);
+
           if (evt.message) {
             setLogs((l) => [...l, evt.message]);
           }
@@ -127,10 +130,13 @@ export default function HomePage() {
           setLogs((l) => [...l, evt.message]);
         } else if (evt.type === "need_ratings") {
           setPendingFaculties(evt.faculties);
+
           const initialRatings = {};
+
           evt.faculties.forEach((faculty) => {
             initialRatings[faculty.id] = 1;
           });
+
           setFacultyRatings(initialRatings);
           setShowFacultyRatingModal(true);
           setIsLoading(false);
@@ -138,7 +144,10 @@ export default function HomePage() {
           setError(evt.message || "Unknown error");
           setIsLoading(false);
         } else if (evt.type === "done") {
-          if (Array.isArray(evt.logs)) setLogs(evt.logs);
+          if (Array.isArray(evt.logs)) {
+            setLogs(evt.logs);
+          }
+
           setIsLoading(false);
         }
       }
@@ -149,7 +158,9 @@ export default function HomePage() {
     e.preventDefault();
 
     if (!username.trim() || !password.trim()) {
-      setValidationError("Please enter both username and password before starting automation.");
+      setValidationError(
+        "Please enter both username and password before starting automation."
+      );
       return;
     }
 
@@ -166,16 +177,22 @@ export default function HomePage() {
 
       const response = await fetch("/api/automate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(requestBody),
       });
 
       if (!response.body) {
-        throw new Error("Streaming not supported by the browser/environment.");
+        throw new Error(
+          "Streaming not supported by the browser/environment."
+        );
       }
 
       const reader = response.body.getReader();
+
       readerRef.current = reader;
+
       await processStream(reader);
     } catch (err) {
       setError(err.message || "Failed to connect to the server.");
@@ -201,16 +218,22 @@ export default function HomePage() {
 
       const response = await fetch("/api/automate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(requestBody),
       });
 
       if (!response.body) {
-        throw new Error("Streaming not supported by the browser/environment.");
+        throw new Error(
+          "Streaming not supported by the browser/environment."
+        );
       }
 
       const reader = response.body.getReader();
+
       readerRef.current = reader;
+
       await processStream(reader);
     } catch (err) {
       setError(err.message || "Failed to submit ratings.");
@@ -225,31 +248,43 @@ export default function HomePage() {
   const StepRow = ({ label, progress, detail }) => {
     const statusIcon =
       progress >= 100 ? (
-        <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
       ) : progress > 0 ? (
-        <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-400" />
       ) : (
-        <Circle className="h-4 w-4 text-gray-400" />
+        <Circle className="h-4 w-4 shrink-0 text-gray-400" />
       );
 
     return (
-      <div className="space-y-1">
-        <div className="flex items-center justify-between text-sm">
-          <div className="flex items-center gap-2">
+      <div className="w-full min-w-0 space-y-1">
+        <div className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             {statusIcon}
-            <span className="font-medium text-gray-900">{label}</span>
+
+            <span className="min-w-0 break-words font-medium text-gray-900">
+              {label}
+            </span>
           </div>
-          <div className="flex items-center gap-2">
-            {detail && <span className="text-xs text-gray-600">{detail}</span>}
-            <span className="text-xs tabular-nums font-semibold text-gray-600">
+
+          <div className="flex min-w-0 items-center gap-2 pl-6 sm:pl-0">
+            {detail && (
+              <span className="min-w-0 break-words text-xs text-gray-600 sm:truncate">
+                {detail}
+              </span>
+            )}
+
+            <span className="shrink-0 whitespace-nowrap text-xs tabular-nums font-semibold text-gray-600">
               {Math.min(progress, 100)}%
             </span>
           </div>
         </div>
-        <div className="relative h-1.5 bg-gray-200 rounded-full overflow-hidden">
+
+        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
           <div
             className="absolute inset-y-0 left-0 bg-gradient-to-r from-[#d66d75] to-[#e29587] transition-all duration-500"
-            style={{ width: `${Math.min(progress, 100)}%` }}
+            style={{
+              width: `${Math.min(progress, 100)}%`,
+            }}
           ></div>
         </div>
       </div>
@@ -258,6 +293,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen relative overflow-hidden">
+      {/* Background */}
       <div className="absolute inset-0 bg-gray-50">
         <div
           className="absolute inset-0"
@@ -269,6 +305,7 @@ export default function HomePage() {
             backgroundSize: "20px 20px",
           }}
         />
+
         <div
           className="absolute inset-0"
           style={{
@@ -279,8 +316,13 @@ export default function HomePage() {
             backgroundSize: "100px 100px",
           }}
         />
+
         <div className="absolute inset-0 opacity-[0.15]">
-          <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+          <svg
+            width="100%"
+            height="100%"
+            xmlns="http://www.w3.org/2000/svg"
+          >
             <pattern
               id="blueprint-marks"
               x="0"
@@ -292,9 +334,11 @@ export default function HomePage() {
               <text x="5" y="10" className="text-[6px] fill-blue-500">
                 100
               </text>
+
               <text x="105" y="10" className="text-[6px] fill-blue-500">
                 200
               </text>
+
               <text x="205" y="10" className="text-[6px] fill-blue-500">
                 300
               </text>
@@ -302,62 +346,104 @@ export default function HomePage() {
               <text x="2" y="105" className="text-[6px] fill-blue-500">
                 100
               </text>
+
               <text x="2" y="205" className="text-[6px] fill-blue-500">
                 200
               </text>
+
               <text x="2" y="305" className="text-[6px] fill-blue-500">
                 300
               </text>
 
-              <circle cx="100" cy="100" r="2" className="fill-blue-500/30" />
-              <circle cx="200" cy="200" r="2" className="fill-blue-500/30" />
-              <circle cx="300" cy="300" r="2" className="fill-blue-500/30" />
+              <circle
+                cx="100"
+                cy="100"
+                r="2"
+                className="fill-blue-500/30"
+              />
+
+              <circle
+                cx="200"
+                cy="200"
+                r="2"
+                className="fill-blue-500/30"
+              />
+
+              <circle
+                cx="300"
+                cy="300"
+                r="2"
+                className="fill-blue-500/30"
+              />
             </pattern>
-            <rect width="100%" height="100%" fill="url(#blueprint-marks)" />
+
+            <rect
+              width="100%"
+              height="100%"
+              fill="url(#blueprint-marks)"
+            />
           </svg>
         </div>
+
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(203,213,225,0.33),transparent_70%)]" />
       </div>
 
-      <main className="relative flex items-center justify-center min-h-screen p-4">
-        <div className="w-full max-w-6xl">
+      <main className="relative flex min-h-screen w-full items-center justify-center p-3 sm:p-4">
+        <div className="w-full min-w-0 max-w-6xl">
           <div className="relative">
             <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-[2rem] opacity-20 blur-2xl transition-opacity duration-1000"></div>
 
-            <div className="relative backdrop-blur-2xl bg-white/30 rounded-[2rem] border border-white/20 shadow-xl overflow-hidden">
-              <div className="p-8">
+            <div className="relative w-full min-w-0 overflow-hidden rounded-[2rem] border border-white/20 bg-white/30 shadow-xl backdrop-blur-2xl">
+              {/* Header */}
+              <div className="p-4 sm:p-8">
                 <div className="flex flex-col items-center justify-center gap-3 text-center">
                   <div className="relative">
                     <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl blur-lg opacity-50"></div>
                   </div>
-                  <h1 className="text-4xl font-bold text-gray-900 tracking-tight">
+
+                  <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">
                     Vidya Feedback Automator
                   </h1>
                 </div>
               </div>
 
-              <div className="p-8">
-                <div className="grid gap-8 lg:grid-cols-2">
-                  <div className="space-y-6">
+              <div className="p-4 sm:p-8">
+                <div className="grid w-full min-w-0 gap-6 lg:grid-cols-2 lg:gap-8">
+                  {/* LEFT COLUMN */}
+                  <div className="min-w-0 space-y-6">
                     {validationError && (
                       <div className="relative animate-in fade-in slide-in-from-top-4 duration-500">
                         <div className="absolute -inset-1 bg-gradient-to-r from-red-400 to-pink-400 rounded-2xl opacity-30 blur-xl"></div>
-                        <Alert variant="destructive" className="relative backdrop-blur-xl bg-red-500/20 border-2 border-red-400/50 shadow-lg shadow-red-500/10">
+
+                        <Alert
+                          variant="destructive"
+                          className="relative backdrop-blur-xl bg-red-500/20 border-2 border-red-400/50 shadow-lg shadow-red-500/10"
+                        >
                           <AlertCircle className="h-5 w-5" />
-                          <AlertTitle className="font-semibold text-base">Login Required</AlertTitle>
-                          <AlertDescription className="text-sm">{validationError}</AlertDescription>
+
+                          <AlertTitle className="font-semibold text-base">
+                            Login Required
+                          </AlertTitle>
+
+                          <AlertDescription className="text-sm">
+                            {validationError}
+                          </AlertDescription>
                         </Alert>
                       </div>
                     )}
 
+                    {/* Login / Settings Card */}
                     <div className="relative">
                       <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl opacity-0 blur transition-opacity duration-500"></div>
-                      <div className="relative backdrop-blur-xl bg-white/20 rounded-2xl border border-white/30 shadow-lg p-6">
+
+                      <div className="relative w-full min-w-0 rounded-2xl border border-white/30 bg-white/20 p-4 shadow-lg backdrop-blur-xl sm:p-6">
                         <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                           <div className="h-2 w-2 bg-emerald-400 rounded-full animate-pulse shadow-lg shadow-emerald-400/30"></div>
                           Login Credentials
                         </h2>
+
                         <div className="space-y-4">
+                          {/* Username */}
                           <div className="relative">
                             <Input
                               type="text"
@@ -366,10 +452,15 @@ export default function HomePage() {
                                 setUsername(e.target.value);
                                 setValidationError("");
                               }}
+                              autoCapitalize="none"
+                              autoCorrect="off"
+                              spellCheck={false}
                               placeholder="ERP Username"
-                              className="backdrop-blur-sm bg-white/30 border-white/20 text-gray-900 placeholder:text-gray-500 focus:bg-white/40 focus:border-white/30 transition-all"
+                              className="w-full backdrop-blur-sm bg-white/30 border-white/20 text-gray-900 placeholder:text-gray-500 focus:bg-white/40 focus:border-white/30 transition-all"
                             />
                           </div>
+
+                          {/* Password */}
                           <div className="relative">
                             <Input
                               type="password"
@@ -378,21 +469,27 @@ export default function HomePage() {
                                 setPassword(e.target.value);
                                 setValidationError("");
                               }}
+                              autoCapitalize="none"
+                              autoCorrect="off"
+                              spellCheck={false}
                               placeholder="ERP Password"
-                              className="backdrop-blur-sm bg-white/30 border-white/20 text-gray-900 placeholder:text-gray-500 focus:bg-white/40 focus:border-white/30 transition-all"
+                              className="w-full backdrop-blur-sm bg-white/30 border-white/20 text-gray-900 placeholder:text-gray-500 focus:bg-white/40 focus:border-white/30 transition-all"
                             />
                           </div>
 
+                          {/* Feedback Mode */}
                           <div className="space-y-3 pt-2">
                             <label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                               <Sparkles className="h-4 w-4 text-purple-500" />
                               Feedback Mode
                             </label>
+
                             <div className="space-y-3">
-                              <label 
+                              {/* Set All */}
+                              <label
                                 className={`relative flex items-start gap-3 cursor-pointer p-3 rounded-lg border-2 transition-all ${
-                                  feedbackMode === "set-all" 
-                                    ? "border-blue-400 bg-blue-50/50" 
+                                  feedbackMode === "set-all"
+                                    ? "border-blue-400 bg-blue-50/50"
                                     : "border-white/30 bg-white/10 hover:bg-white/20"
                                 }`}
                               >
@@ -401,22 +498,29 @@ export default function HomePage() {
                                   name="feedbackMode"
                                   value="set-all"
                                   checked={feedbackMode === "set-all"}
-                                  onChange={(e) => setFeedbackMode(e.target.value)}
-                                  className="mt-0.5 w-4 h-4 text-blue-600"
+                                  onChange={(e) =>
+                                    setFeedbackMode(e.target.value)
+                                  }
+                                  className="mt-0.5 w-4 h-4 text-blue-600 shrink-0"
                                 />
-                                <div className="flex-1">
+
+                                <div className="flex-1 min-w-0">
                                   <div className="font-medium text-gray-900 text-sm">
                                     Set same rating for all
                                   </div>
-                                  <div className="text-xs text-gray-600 mt-0.5">
-                                    Quick mode: Apply one rating to every faculty
+
+                                  <div className="text-xs text-gray-600 mt-0.5 break-words">
+                                    Quick mode: Apply one rating to every
+                                    faculty
                                   </div>
                                 </div>
                               </label>
-                              <label 
+
+                              {/* Custom */}
+                              <label
                                 className={`relative flex items-start gap-3 cursor-pointer p-3 rounded-lg border-2 transition-all ${
-                                  feedbackMode === "custom" 
-                                    ? "border-purple-400 bg-purple-50/50" 
+                                  feedbackMode === "custom"
+                                    ? "border-purple-400 bg-purple-50/50"
                                     : "border-white/30 bg-white/10 hover:bg-white/20"
                                 }`}
                               >
@@ -425,48 +529,74 @@ export default function HomePage() {
                                   name="feedbackMode"
                                   value="custom"
                                   checked={feedbackMode === "custom"}
-                                  onChange={(e) => setFeedbackMode(e.target.value)}
-                                  className="mt-0.5 w-4 h-4 text-purple-600"
+                                  onChange={(e) =>
+                                    setFeedbackMode(e.target.value)
+                                  }
+                                  className="mt-0.5 w-4 h-4 text-purple-600 shrink-0"
                                 />
-                                <div className="flex-1">
+
+                                <div className="flex-1 min-w-0">
                                   <div className="font-medium text-gray-900 text-sm">
                                     Customize per faculty
                                   </div>
-                                  <div className="text-xs text-gray-600 mt-0.5">
-                                    Choose individual ratings for each faculty member
+
+                                  <div className="text-xs text-gray-600 mt-0.5 break-words">
+                                    Choose individual ratings for each faculty
+                                    member
                                   </div>
                                 </div>
                               </label>
                             </div>
                           </div>
 
+                          {/* Rating */}
                           {feedbackMode === "set-all" && (
                             <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
                               <label className="text-sm font-medium text-gray-900 flex items-center gap-2">
                                 <CheckCircle2 className="h-4 w-4 text-green-500" />
                                 Select Rating
                               </label>
+
                               <div className="relative">
                                 <select
                                   value={selectedRating}
-                                  onChange={(e) => setSelectedRating(Number(e.target.value))}
+                                  onChange={(e) =>
+                                    setSelectedRating(
+                                      Number(e.target.value)
+                                    )
+                                  }
                                   className="w-full backdrop-blur-sm bg-white/40 border-2 border-blue-200 text-gray-900 rounded-lg px-4 py-3 font-medium focus:bg-white/50 focus:border-blue-400 transition-all appearance-none cursor-pointer shadow-sm"
                                 >
                                   {FEEDBACK_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>
+                                    <option
+                                      key={option.value}
+                                      value={option.value}
+                                    >
                                       {option.label}
                                     </option>
                                   ))}
                                 </select>
+
                                 <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                                  <svg className="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                  <svg
+                                    className="h-5 w-5 text-gray-600"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M19 9l-7 7-7-7"
+                                    />
                                   </svg>
                                 </div>
                               </div>
                             </div>
                           )}
 
+                          {/* Start Button */}
                           <Button
                             onClick={handleSubmit}
                             className="relative w-full bg-gradient-to-r from-[#d66d75] to-[#e29587] hover:from-[#d66d75]/90 hover:to-[#e29587]/90 text-white overflow-hidden rounded-lg"
@@ -487,14 +617,17 @@ export default function HomePage() {
                       </div>
                     </div>
 
+                    {/* Progress Tracker */}
                     <div className="relative">
                       <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-2xl opacity-0 blur transition-opacity duration-500"></div>
-                      <div className="relative backdrop-blur-xl bg-white/20 rounded-2xl border border-white/30 shadow-lg p-6">
+
+                      <div className="relative w-full min-w-0 overflow-hidden backdrop-blur-xl bg-white/20 rounded-2xl border border-white/30 shadow-lg p-4 sm:p-6">
                         <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
                           <div className="h-2 w-2 bg-blue-400 rounded-full animate-pulse shadow-lg shadow-blue-400/30"></div>
                           Progress Tracker
                         </h2>
-                        <div className="space-y-3">
+
+                        <div className="w-full min-w-0 space-y-3">
                           {steps.map((s) => (
                             <StepRow
                               key={s.key}
@@ -507,17 +640,23 @@ export default function HomePage() {
                       </div>
                     </div>
 
+                    {/* Error */}
                     {error && (
                       <div className="relative animate-in fade-in slide-in-from-top-2 duration-300">
                         <div className="absolute -inset-0.5 bg-gradient-to-r from-red-500 to-pink-500 rounded-2xl opacity-20 blur"></div>
-                        <div className="relative backdrop-blur-xl bg-red-500/10 border border-red-500/30 rounded-2xl p-4 shadow-lg">
-                          <div className="flex gap-3">
+
+                        <div className="relative backdrop-blur-xl bg-red-500/10 border border-red-500/30 rounded-2xl p-4 shadow-lg overflow-hidden">
+                          <div className="flex gap-3 min-w-0">
                             <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-                            <div>
+
+                            <div className="min-w-0">
                               <h3 className="font-semibold text-red-700 mb-1">
                                 Error Occurred
                               </h3>
-                              <p className="text-sm text-red-600">{error}</p>
+
+                              <p className="text-sm text-red-600 break-words">
+                                {error}
+                              </p>
                             </div>
                           </div>
                         </div>
@@ -525,25 +664,31 @@ export default function HomePage() {
                     )}
                   </div>
 
-                  <div className="relative">
+                  {/* RIGHT COLUMN */}
+                  <div className="relative min-w-0">
                     {showFacultyRatingModal ? (
-                      <div className="relative backdrop-blur-xl bg-white/20 rounded-2xl border border-white/30 shadow-lg overflow-hidden animate-in fade-in slide-in-from-right-4 duration-500">
-                        <div className="backdrop-blur-xl bg-gradient-to-r from-purple-500/10 to-pink-500/10 border-b border-white/20 px-6 py-5">
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center shadow-lg">
+                      <div className="relative w-full min-w-0 overflow-hidden rounded-2xl border border-white/30 bg-white/20 shadow-lg animate-in fade-in slide-in-from-right-4 duration-500">
+                        {/* Faculty Header */}
+                        <div className="backdrop-blur-xl bg-gradient-to-r from-purple-500/10 to-pink-500/10 border-b border-white/20 px-4 py-5 sm:px-6">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center shadow-lg">
                               <Sparkles className="h-5 w-5 text-white" />
                             </div>
-                            <div>
-                              <h2 className="text-gray-900 font-bold text-lg">
+
+                            <div className="min-w-0">
+                              <h2 className="text-gray-900 font-bold text-lg break-words">
                                 Customize Faculty Ratings
                               </h2>
+
                               <p className="text-sm text-gray-600">
-                                Found {pendingFaculties.length} faculty members
+                                Found {pendingFaculties.length} faculty
+                                members
                               </p>
                             </div>
                           </div>
                         </div>
-                        <div className="p-6">
+
+                        <div className="p-4 sm:p-6">
                           <ScrollArea className="h-[400px] pr-4">
                             <div className="space-y-3">
                               {pendingFaculties.map((faculty, index) => (
@@ -552,40 +697,62 @@ export default function HomePage() {
                                   className="relative group"
                                 >
                                   <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-400 to-pink-400 rounded-xl opacity-0 group-hover:opacity-20 blur transition-opacity duration-300"></div>
-                                  <div className="relative backdrop-blur-sm bg-white/40 rounded-xl p-4 border border-white/30 hover:border-purple-300 transition-all shadow-sm hover:shadow-md">
-                                    <div className="flex items-start gap-3 mb-3">
+
+                                  <div className="relative backdrop-blur-sm bg-white/40 rounded-xl p-4 border border-white/30 hover:border-purple-300 transition-all shadow-sm hover:shadow-md overflow-hidden">
+                                    <div className="flex items-start gap-3 mb-3 min-w-0">
                                       <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                                         {index + 1}
                                       </div>
+
                                       <div className="flex-1 min-w-0">
                                         <div className="font-semibold text-gray-900 truncate">
                                           {faculty.name}
                                         </div>
+
                                         <div className="text-xs text-gray-600 mt-0.5 truncate">
                                           {faculty.course}
                                         </div>
                                       </div>
                                     </div>
-                                    <div className="relative">
+
+                                    <div className="relative w-full min-w-0">
                                       <select
-                                        value={facultyRatings[faculty.id] || 1}
+                                        value={
+                                          facultyRatings[faculty.id] || 1
+                                        }
                                         onChange={(e) =>
                                           setFacultyRatings({
                                             ...facultyRatings,
-                                            [faculty.id]: Number(e.target.value),
+                                            [faculty.id]: Number(
+                                              e.target.value
+                                            ),
                                           })
                                         }
-                                        className="w-full backdrop-blur-sm bg-white/50 border-2 border-purple-200 text-gray-900 rounded-lg px-3 py-2.5 text-sm font-medium focus:border-purple-400 focus:bg-white/60 transition-all appearance-none cursor-pointer"
+                                        className="w-full min-w-0 backdrop-blur-sm bg-white/50 border-2 border-purple-200 text-gray-900 rounded-lg px-3 py-2.5 text-sm font-medium focus:border-purple-400 focus:bg-white/60 transition-all appearance-none cursor-pointer"
                                       >
                                         {FEEDBACK_OPTIONS.map((option) => (
-                                          <option key={option.value} value={option.value}>
+                                          <option
+                                            key={option.value}
+                                            value={option.value}
+                                          >
                                             {option.label}
                                           </option>
                                         ))}
                                       </select>
+
                                       <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                                        <svg className="h-4 w-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        <svg
+                                          className="h-4 w-4 text-gray-600"
+                                          fill="none"
+                                          viewBox="0 0 24 24"
+                                          stroke="currentColor"
+                                        >
+                                          <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M19 9l-7 7-7-7"
+                                          />
                                         </svg>
                                       </div>
                                     </div>
@@ -594,6 +761,7 @@ export default function HomePage() {
                               ))}
                             </div>
                           </ScrollArea>
+
                           <div className="mt-6 pt-4 border-t border-white/20">
                             <Button
                               onClick={handleConfirmRatings}
@@ -606,21 +774,28 @@ export default function HomePage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="relative backdrop-blur-xl bg-white/20 rounded-2xl border border-white/30 shadow-lg overflow-hidden">
-                        <div className="backdrop-blur-xl bg-white/30 border-b border-white/20 px-6 py-4 flex items-center gap-3">
-                          <Terminal className="h-5 w-5 text-emerald-400" />
-                          <h2 className="text-gray-900 font-semibold">
+                      /* Automation Log */
+                      <div className="relative w-full min-w-0 overflow-hidden rounded-2xl border border-white/30 bg-white/20 shadow-lg">
+                        <div className="backdrop-blur-xl bg-white/30 border-b border-white/20 px-4 py-4 sm:px-6 flex items-center gap-3 min-w-0">
+                          <Terminal className="h-5 w-5 shrink-0 text-emerald-400" />
+
+                          <h2 className="text-gray-900 font-semibold truncate">
                             Automation Log
                           </h2>
-                          <div className="ml-auto flex gap-2">
+
+                          <div className="ml-auto flex gap-2 shrink-0">
                             <div className="h-3 w-3 rounded-full bg-red-500 shadow-lg shadow-red-500/20"></div>
                             <div className="h-3 w-3 rounded-full bg-yellow-500 shadow-lg shadow-yellow-500/20"></div>
                             <div className="h-3 w-3 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/20"></div>
                           </div>
                         </div>
-                        <div className="p-6 bg-transparent">
-                          <ScrollArea className="h-[500px]" ref={logRef}>
-                            <pre className="text-sm font-mono text-gray-800 whitespace-pre-wrap break-words leading-relaxed">
+
+                        <div className="min-w-0 bg-transparent p-4 sm:p-6">
+                          <ScrollArea
+                            className="h-[400px] sm:h-[500px]"
+                            ref={logRef}
+                          >
+                            <pre className="max-w-full overflow-hidden text-sm font-mono text-gray-800 whitespace-pre-wrap break-words leading-relaxed">
                               {logs.length > 0 ? (
                                 logs.join("\n")
                               ) : (
@@ -629,6 +804,7 @@ export default function HomePage() {
                                 </span>
                               )}
                             </pre>
+
                             <div ref={endOfLogsRef} />
                           </ScrollArea>
                         </div>
@@ -640,9 +816,11 @@ export default function HomePage() {
             </div>
           </div>
 
+          {/* GitHub */}
           <div className="mt-8 flex justify-center">
             <div className="relative">
               <div className="absolute -inset-1 bg-gradient-to-r from-gray-600 to-gray-800 rounded-xl opacity-0 blur transition-opacity duration-300"></div>
+
               <Button
                 onClick={() =>
                   window.open(
@@ -657,6 +835,8 @@ export default function HomePage() {
               </Button>
             </div>
           </div>
+
+          {/* Footer */}
           <div className="mt-6 flex justify-center">
             <img
               src="ondotfooter.png"
