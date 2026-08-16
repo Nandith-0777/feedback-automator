@@ -15,6 +15,7 @@ function makeStream() {
 
 async function erpApiCall(path, params, sid) {
   const url = `https://erp.vidyaacademy.ac.in/web${path}`;
+
   const payload = {
     jsonrpc: "2.0",
     method: "call",
@@ -33,10 +34,7 @@ async function erpApiCall(path, params, sid) {
 
       console.error("========== ERP SERVER ERROR ==========");
       console.error("Path:", path);
-      console.error(
-        "Full ERP error:",
-        JSON.stringify(error, null, 2)
-      );
+      console.error(JSON.stringify(error, null, 2));
       console.error("======================================");
 
       const errorMessage =
@@ -63,8 +61,7 @@ async function erpApiCall(path, params, sid) {
 }
 
 async function login(username, password) {
-  const url =
-    "https://erp.vidyaacademy.ac.in/web/session/authenticate";
+  const url = "https://erp.vidyaacademy.ac.in/web/session/authenticate";
 
   const payload = {
     jsonrpc: "2.0",
@@ -83,24 +80,26 @@ async function login(username, password) {
     const result = response.data;
 
     if (result.result && result.result.uid) {
-      const sid = response.headers["set-cookie"][0]
-        .split(";")[0]
-        .split("=")[1];
+      const setCookie = response.headers["set-cookie"];
+
+      if (!setCookie || !setCookie[0]) {
+        throw new Error("Login succeeded but no session cookie was returned.");
+      }
+
+      const sid = setCookie[0].split(";")[0].split("=")[1];
 
       const { session_id, uid } = result.result;
 
-      return {
-        sid,
-        session_id,
-        uid,
-      };
+      return { sid, session_id, uid };
     } else {
       throw new Error("Incorrect username or password.");
     }
   } catch (error) {
-    throw new Error(
-      "Failed to log in. Please check your credentials."
-    );
+    if (error.message === "Incorrect username or password.") {
+      throw error;
+    }
+
+    throw new Error("Failed to log in. Please check your credentials.");
   }
 }
 
@@ -156,12 +155,14 @@ async function automateFeedback(
     sid
   );
 
+  if (!batchIdResult || batchIdResult.length === 0) {
+    throw new Error("Unable to find your batch.");
+  }
+
   const gt_batch_id = batchIdResult[0].gt_batch_id[0];
   const batchName = batchIdResult[0].gt_batch_id[1];
 
-  logs.push(
-    `    Found Batch: ${batchName} (ID: ${gt_batch_id})`
-  );
+  logs.push(`    Found Batch: ${batchName} (ID: ${gt_batch_id})`);
 
   await emit({
     type: "status",
@@ -200,14 +201,14 @@ async function automateFeedback(
     sid
   );
 
-  const latestSemester =
-    semestersResult[semestersResult.length - 1];
+  if (!semestersResult || semestersResult.length === 0) {
+    throw new Error("Unable to find available semesters.");
+  }
 
+  const latestSemester = semestersResult[semestersResult.length - 1];
   const semesterId = latestSemester.semester[0];
 
-  logs.push(
-    `    Found latest semester: ${latestSemester.semester[1]}`
-  );
+  logs.push(`    Found latest semester: ${latestSemester.semester[1]}`);
 
   await emit({
     type: "status",
@@ -253,20 +254,14 @@ async function automateFeedback(
     );
   }
 
-  const latestConfig = configResult.reduce(
-    (latest, current) => {
-      return current.config_id[0] > latest.config_id[0]
-        ? current
-        : latest;
-    }
-  );
+  const latestConfig = configResult.reduce((latest, current) => {
+    return current.config_id[0] > latest.config_id[0] ? current : latest;
+  });
 
   const configId = latestConfig.config_id[0];
   const configName = latestConfig.config_id[1];
 
-  logs.push(
-    `    Found latest config: ${configName} (ID: ${configId})`
-  );
+  logs.push(`    Found latest config: ${configName} (ID: ${configId})`);
 
   await emit({
     type: "status",
@@ -288,19 +283,14 @@ async function automateFeedback(
     "/dataset/search_read",
     {
       model,
-      fields: [
-        "id",
-        "employeename",
-        "course",
-        "state",
-      ],
+      fields: ["id", "employeename", "course", "state"],
       domain: [
         ["config_id", "=", configId],
         ["state", "=", "draft"],
         ["login_id", "=", uid],
       ],
       context: kwArgsContext,
-      session_id: session_id,
+      session_id,
       limit: 80,
     },
     sid
@@ -309,9 +299,7 @@ async function automateFeedback(
   const feedbackRecords = pendingFeedbacks.records;
 
   if (!feedbackRecords.length) {
-    logs.push(
-      "🎉 No pending feedback forms found. You are all done!"
-    );
+    logs.push("🎉 No pending feedback forms found. You are all done!");
 
     await emit({
       type: "status",
@@ -347,9 +335,7 @@ async function automateFeedback(
     const faculties = feedbackRecords.map((record) => ({
       id: record.id,
       name: record.employeename,
-      course: Array.isArray(record.course)
-        ? record.course[1]
-        : "",
+      course: Array.isArray(record.course) ? record.course[1] : "",
     }));
 
     await emit({
@@ -359,20 +345,14 @@ async function automateFeedback(
 
     return {
       needsRatings: true,
-      credentials: {
-        sid,
-        session_id,
-        uid,
-      },
+      credentials: { sid, session_id, uid },
       configId,
       gt_batch_id,
       semesterId,
     };
   }
 
-  logs.push(
-    "5) Submitting feedback for each teacher..."
-  );
+  logs.push("5) Submitting feedback for each teacher...");
 
   await emit({
     type: "status",
@@ -388,33 +368,19 @@ async function automateFeedback(
 
   for (const record of feedbackRecords) {
     try {
-      const {
-        id: feedbackId,
-        employeename,
-        course,
-      } = record;
-
-      const courseName = Array.isArray(course)
-        ? course[1]
-        : "";
+      const { id: feedbackId, employeename, course } = record;
+      const courseName = Array.isArray(course) ? course[1] : "";
 
       logs.push(
         `   -> Submitting for ${employeename} (${courseName})...`
       );
 
-      /*
-       * STEP 1:
-       * Read the feedback form and get its question IDs.
-       */
       const formDetails = await erpApiCall(
         "/dataset/call_kw",
         {
           model,
           method: "read",
-          args: [
-            [feedbackId],
-            ["questions_line"],
-          ],
+          args: [[feedbackId], ["questions_line"]],
           kwargs: {
             context: kwArgsContext,
           },
@@ -424,8 +390,7 @@ async function automateFeedback(
         sid
       );
 
-      const questionIds =
-        formDetails[0]?.questions_line || [];
+      const questionIds = formDetails[0]?.questions_line || [];
 
       const markState =
         feedbackMode === "custom"
@@ -441,29 +406,17 @@ async function automateFeedback(
       };
 
       logs.push(
-        `       Rating: ${
-          ratingLabels[markState] || markState
-        }`
+        `       Rating: ${ratingLabels[markState] || markState}`
       );
 
-      /*
-       * STEP 2:
-       * Build the answers payload.
-       */
-      const answersPayload = questionIds.map(
-        (qid) => [
-          1,
-          qid,
-          {
-            mark_state: markState,
-          },
-        ]
-      );
+      const answersPayload = questionIds.map((qid) => [
+        1,
+        qid,
+        {
+          mark_state: markState,
+        },
+      ]);
 
-      /*
-       * STEP 3:
-       * Write the selected rating.
-       */
       if (answersPayload.length > 0) {
         logs.push(
           `       Writing ${answersPayload.length} question answers...`
@@ -474,15 +427,7 @@ async function automateFeedback(
           {
             model,
             method: "write",
-            args: [
-              [
-                feedbackId,
-              ],
-              {
-                questions_line:
-                  answersPayload,
-              },
-            ],
+            args: [[feedbackId], { questions_line: answersPayload }],
             kwargs: {
               context: kwArgsContext,
             },
@@ -492,43 +437,32 @@ async function automateFeedback(
           sid
         );
 
-        logs.push(
-          "       ✓ Rating written successfully."
-        );
-      } else {
-        logs.push(
-          "       ⚠️ No question IDs found for this form."
-        );
+        logs.push("       ✓ Rating written successfully.");
       }
 
-      /*
-       * STEP 4:
-       * Submit the feedback form.
-       */
-      logs.push(
-        "       Submitting feedback form..."
-      );
+      logs.push("       Submitting feedback form...");
 
+      // IMPORTANT:
+      // Pass only the record ID as a positional argument.
+      // The context belongs inside kwargs.
       await erpApiCall(
         "/dataset/call_button",
         {
           model,
           method: "button_submit",
-          args: [
-            [feedbackId],
-            kwArgsContext,
-          ],
+          args: [[feedbackId]],
+          kwargs: {
+            context: kwArgsContext,
+          },
           session_id,
           context: topLevelContext,
         },
         sid
       );
 
-      logs.push(
-        "       ✓ Feedback form submitted successfully."
-      );
-
       completed += 1;
+
+      logs.push("       ✓ Feedback submitted successfully.");
 
       const percent = Math.round(
         (completed / feedbackRecords.length) * 100
@@ -545,50 +479,46 @@ async function automateFeedback(
     } catch (err) {
       failed += 1;
 
-      const errorMessage =
-        err?.message ||
-        "Unknown submission error";
-
       logs.push(
-        `   -> ❌ Error submitting for ${record.employeename}: ${errorMessage}`
+        `   -> ❌ Error submitting for ${record.employeename}: ${err.message}`
       );
 
       await emit({
         type: "status",
         step: "submit",
-        progress: Math.round(
-          ((completed + failed) /
-            feedbackRecords.length) *
-            100
-        ),
         total: feedbackRecords.length,
         completed,
-        message: `Error with ${record.employeename}: ${errorMessage}`,
+        progress: Math.round(
+          ((completed + failed) / feedbackRecords.length) * 100
+        ),
+        message: `Error with ${record.employeename}: ${err.message}`,
       });
     }
   }
 
-  /*
-   * IMPORTANT:
-   * Only show success if every form actually succeeded.
-   */
   if (failed === 0) {
-    logs.push(
-      "✅ All feedback submitted successfully!"
-    );
+    logs.push("✅ All feedback submitted successfully!");
   } else {
     logs.push(
       `⚠️ Submission finished: ${completed} succeeded, ${failed} failed.`
     );
   }
+
+  await emit({
+    type: "status",
+    step: "submit",
+    progress: 100,
+    total: feedbackRecords.length,
+    completed,
+    message:
+      failed === 0
+        ? "All feedback submitted successfully!"
+        : `${completed} succeeded, ${failed} failed.`,
+  });
 }
 
 export async function POST(request) {
-  const {
-    stream,
-    writer,
-    send,
-  } = makeStream();
+  const { stream, writer, send } = makeStream();
 
   let body;
 
@@ -616,8 +546,7 @@ export async function POST(request) {
   if (!username || !password) {
     return new Response(
       JSON.stringify({
-        error:
-          "Username and password are required.",
+        error: "Username and password are required.",
       }),
       {
         status: 400,
@@ -636,14 +565,9 @@ export async function POST(request) {
         message: "Logging in...",
       });
 
-      const credentials = await login(
-        username,
-        password
-      );
+      const credentials = await login(username, password);
 
-      logs.push(
-        "✓ Login Successful."
-      );
+      logs.push("✓ Login Successful.");
 
       await send({
         type: "status",
@@ -666,22 +590,18 @@ export async function POST(request) {
         });
       };
 
-      const result =
-        await automateFeedback(
-          credentials.sid,
-          credentials.session_id,
-          credentials.uid,
-          logs,
-          emit,
-          feedbackMode,
-          rating,
-          facultyRatings
-        );
+      const result = await automateFeedback(
+        credentials.sid,
+        credentials.session_id,
+        credentials.uid,
+        logs,
+        emit,
+        feedbackMode,
+        rating,
+        facultyRatings
+      );
 
-      if (
-        result &&
-        result.needsRatings
-      ) {
+      if (result && result.needsRatings) {
         return;
       }
 
@@ -690,9 +610,7 @@ export async function POST(request) {
         logs,
       });
     } catch (error) {
-      logs.push(
-        `❌ An error occurred: ${error.message}`
-      );
+      logs.push(`❌ An error occurred: ${error.message}`);
 
       await send({
         type: "error",
@@ -706,10 +624,8 @@ export async function POST(request) {
 
   return new Response(stream, {
     headers: {
-      "Content-Type":
-        "application/x-ndjson",
-      "Cache-Control":
-        "no-cache, no-transform",
+      "Content-Type": "application/x-ndjson",
+      "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
     },
   });
