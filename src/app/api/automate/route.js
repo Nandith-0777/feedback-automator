@@ -1,4 +1,7 @@
 import axios from "axios";
+import { submitFeedback } from "../../../lib/submit-feedback.mjs";
+
+export const runtime = "nodejs";
 
 function makeStream() {
   const ts = new TransformStream();
@@ -27,19 +30,18 @@ async function erpApiCall(path, params, sid) {
   };
 
   try {
-    const response = await axios.post(url, payload, { headers });
+    const response = await axios.post(url, payload, {
+      headers,
+      timeout: 30000,
+    });
 
     if (response.data.error) {
       const error = response.data.error;
 
-      console.error("========== ERP SERVER ERROR ==========");
-      console.error("Path:", path);
-      console.error(JSON.stringify(error, null, 2));
-      console.error("======================================");
+      console.error("ERP request failed:", path);
 
       const errorMessage =
         error?.data?.message ||
-        error?.data?.debug ||
         error?.message ||
         "Unknown OpenERP Server Error";
 
@@ -49,11 +51,7 @@ async function erpApiCall(path, params, sid) {
     return response.data.result;
   } catch (error) {
     if (error.response) {
-      console.error(
-        "ERP HTTP ERROR:",
-        error.response.status,
-        error.response.data
-      );
+      console.error("ERP HTTP ERROR:", error.response.status);
     }
 
     throw error;
@@ -76,7 +74,7 @@ async function login(username, password) {
   };
 
   try {
-    const response = await axios.post(url, payload);
+    const response = await axios.post(url, payload, { timeout: 30000 });
     const result = response.data;
 
     if (result.result && result.result.uid) {
@@ -86,7 +84,12 @@ async function login(username, password) {
         throw new Error("Login succeeded but no session cookie was returned.");
       }
 
-      const sid = setCookie[0].split(";")[0].split("=")[1];
+      const sessionCookie = setCookie.find((cookie) =>
+        cookie.startsWith("sid="),
+      );
+      if (!sessionCookie)
+        throw new Error("ERP did not return a session cookie.");
+      const sid = sessionCookie.split(";")[0].slice(4);
 
       const { session_id, uid } = result.result;
 
@@ -111,7 +114,7 @@ async function automateFeedback(
   emit,
   feedbackMode,
   rating,
-  facultyRatings
+  facultyRatings,
 ) {
   const model = "vict.feedback.student.batch.feedback";
 
@@ -152,7 +155,7 @@ async function automateFeedback(
       session_id,
       context: topLevelContext,
     },
-    sid
+    sid,
   );
 
   if (!batchIdResult || batchIdResult.length === 0) {
@@ -198,14 +201,16 @@ async function automateFeedback(
       session_id,
       context: topLevelContext,
     },
-    sid
+    sid,
   );
 
   if (!semestersResult || semestersResult.length === 0) {
     throw new Error("Unable to find available semesters.");
   }
 
-  const latestSemester = semestersResult[semestersResult.length - 1];
+  const latestSemester = semestersResult.reduce((latest, current) =>
+    current.semester[0] > latest.semester[0] ? current : latest,
+  );
   const semesterId = latestSemester.semester[0];
 
   logs.push(`    Found latest semester: ${latestSemester.semester[1]}`);
@@ -245,12 +250,12 @@ async function automateFeedback(
       session_id,
       context: topLevelContext,
     },
-    sid
+    sid,
   );
 
   if (!configResult || configResult.length === 0) {
     throw new Error(
-      "No feedback configurations found for the latest semester."
+      "No feedback configurations found for the latest semester.",
     );
   }
 
@@ -286,14 +291,14 @@ async function automateFeedback(
       fields: ["id", "employeename", "course", "state"],
       domain: [
         ["config_id", "=", configId],
-        ["state", "=", "draft"],
+        ["state", "in", ["draft", "edit"]],
         ["login_id", "=", uid],
       ],
       context: kwArgsContext,
       session_id,
-      limit: 80,
+      limit: false,
     },
-    sid
+    sid,
   );
 
   const feedbackRecords = pendingFeedbacks.records;
@@ -320,9 +325,7 @@ async function automateFeedback(
     return;
   }
 
-  logs.push(
-    `    Found ${feedbackRecords.length} feedback forms to submit.`
-  );
+  logs.push(`    Found ${feedbackRecords.length} feedback forms to submit.`);
 
   await emit({
     type: "status",
@@ -371,9 +374,7 @@ async function automateFeedback(
       const { id: feedbackId, employeename, course } = record;
       const courseName = Array.isArray(course) ? course[1] : "";
 
-      logs.push(
-        `   -> Submitting for ${employeename} (${courseName})...`
-      );
+      logs.push(`   -> Submitting for ${employeename} (${courseName})...`);
 
       const formDetails = await erpApiCall(
         "/dataset/call_kw",
@@ -387,15 +388,20 @@ async function automateFeedback(
           session_id,
           context: topLevelContext,
         },
-        sid
+        sid,
       );
 
       const questionIds = formDetails[0]?.questions_line || [];
 
       const markState =
-        feedbackMode === "custom"
-          ? facultyRatings[feedbackId] || 1
-          : rating;
+        feedbackMode === "custom" ? facultyRatings[feedbackId] : rating;
+
+      if (![1, 2, 3, 4, 5].includes(markState)) {
+        throw new Error("Choose a rating for this faculty before submitting.");
+      }
+      if (!questionIds.length) {
+        throw new Error("This form has no questions; it was not submitted.");
+      }
 
       const ratingLabels = {
         1: "Excellent",
@@ -405,9 +411,7 @@ async function automateFeedback(
         5: "Poor",
       };
 
-      logs.push(
-        `       Rating: ${ratingLabels[markState] || markState}`
-      );
+      logs.push(`       Rating: ${ratingLabels[markState] || markState}`);
 
       const answersPayload = questionIds.map((qid) => [
         1,
@@ -419,7 +423,7 @@ async function automateFeedback(
 
       if (answersPayload.length > 0) {
         logs.push(
-          `       Writing ${answersPayload.length} question answers...`
+          `       Writing ${answersPayload.length} question answers...`,
         );
 
         await erpApiCall(
@@ -434,7 +438,7 @@ async function automateFeedback(
             session_id,
             context: topLevelContext,
           },
-          sid
+          sid,
         );
 
         logs.push("       ✓ Rating written successfully.");
@@ -442,31 +446,19 @@ async function automateFeedback(
 
       logs.push("       Submitting feedback form...");
 
-      // IMPORTANT:
-      // Pass only the record ID as a positional argument.
-      // The context belongs inside kwargs.
-      await erpApiCall(
-        "/dataset/call_button",
-        {
-          model,
-          method: "button_submit",
-          args: [[feedbackId]],
-          kwargs: {
-            context: kwArgsContext,
-          },
-          session_id,
-          context: topLevelContext,
-        },
-        sid
-      );
+      await submitFeedback(erpApiCall, {
+        model,
+        feedbackId,
+        context: kwArgsContext,
+        session_id,
+        sid,
+      });
 
       completed += 1;
 
       logs.push("       ✓ Feedback submitted successfully.");
 
-      const percent = Math.round(
-        (completed / feedbackRecords.length) * 100
-      );
+      const percent = Math.round((completed / feedbackRecords.length) * 100);
 
       await emit({
         type: "status",
@@ -480,7 +472,7 @@ async function automateFeedback(
       failed += 1;
 
       logs.push(
-        `   -> ❌ Error submitting for ${record.employeename}: ${err.message}`
+        `   -> ❌ Error submitting for ${record.employeename}: ${err.message}`,
       );
 
       await emit({
@@ -489,7 +481,7 @@ async function automateFeedback(
         total: feedbackRecords.length,
         completed,
         progress: Math.round(
-          ((completed + failed) / feedbackRecords.length) * 100
+          ((completed + failed) / feedbackRecords.length) * 100,
         ),
         message: `Error with ${record.employeename}: ${err.message}`,
       });
@@ -500,7 +492,7 @@ async function automateFeedback(
     logs.push("✅ All feedback submitted successfully!");
   } else {
     logs.push(
-      `⚠️ Submission finished: ${completed} succeeded, ${failed} failed.`
+      `⚠️ Submission finished: ${completed} succeeded, ${failed} failed.`,
     );
   }
 
@@ -510,16 +502,16 @@ async function automateFeedback(
     progress: 100,
     total: feedbackRecords.length,
     completed,
+    failed,
     message:
       failed === 0
         ? "All feedback submitted successfully!"
         : `${completed} succeeded, ${failed} failed.`,
   });
+  return { completed, failed, total: feedbackRecords.length };
 }
 
 export async function POST(request) {
-  const { stream, writer, send } = makeStream();
-
   let body;
 
   try {
@@ -531,7 +523,7 @@ export async function POST(request) {
       }),
       {
         status: 400,
-      }
+      },
     );
   }
 
@@ -543,17 +535,35 @@ export async function POST(request) {
     facultyRatings = null,
   } = body || {};
 
-  if (!username || !password) {
+  if (
+    typeof username !== "string" ||
+    !username.trim() ||
+    typeof password !== "string" ||
+    !password
+  ) {
     return new Response(
       JSON.stringify({
         error: "Username and password are required.",
       }),
       {
         status: 400,
-      }
+      },
     );
   }
 
+  if (
+    !["set-all", "custom"].includes(feedbackMode) ||
+    (feedbackMode === "set-all" && ![1, 2, 3, 4, 5].includes(rating)) ||
+    (facultyRatings !== null &&
+      (typeof facultyRatings !== "object" || Array.isArray(facultyRatings)))
+  ) {
+    return Response.json(
+      { error: "Invalid rating settings." },
+      { status: 400 },
+    );
+  }
+
+  const { stream, writer, send } = makeStream();
   const logs = [];
 
   (async () => {
@@ -598,7 +608,7 @@ export async function POST(request) {
         emit,
         feedbackMode,
         rating,
-        facultyRatings
+        facultyRatings,
       );
 
       if (result && result.needsRatings) {
@@ -608,6 +618,7 @@ export async function POST(request) {
       await send({
         type: "done",
         logs,
+        summary: result || { completed: 0, failed: 0, total: 0 },
       });
     } catch (error) {
       logs.push(`❌ An error occurred: ${error.message}`);

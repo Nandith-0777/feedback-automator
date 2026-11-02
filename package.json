@@ -6,7 +6,8 @@
     "dev": "next dev -p 5000 -H 0.0.0.0",
     "build": "next build",
     "start": "next start -p 5000 -H 0.0.0.0",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-progress": "^1.1.7",
@@ -26,5 +27,10 @@
     "@tailwindcss/postcss": "^4.3.3",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.7"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "^8.5.32"
+    }
   }
 }

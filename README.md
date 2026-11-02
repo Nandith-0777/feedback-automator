@@ -1,36 +1,32 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Vidya Feedback Automator
 
-## Getting Started
+Choose a rating for all pending forms, or choose one per faculty member. The app connects to Vidya ERP, fills each question, submits each form, and checks that ERP reports its state as `submitted`.
 
-First, run the development server:
+## Run locally
 
-```bash
+Requires Node.js 20.9 or newer.
+
+```sh
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:5000. Enter your ERP credentials in the form. Credentials are sent to this app’s server for authentication with ERP; the app does not persist them. No credentials belong in source code or environment files.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+```sh
+npm test
+npm run build
+npm start
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Submission fix
 
-## Learn More
+The ERP’s live feedback form defines its Submit button with `context="{'from_ui_button': True}"`. The automator now includes that context in the button call. It then reads the form’s `state` and counts success only when it is `submitted`. Draft and Edit forms are eligible; already submitted forms are skipped. Failed forms are shown separately and can be retried.
 
-To learn more about Next.js, take a look at the following resources:
+`src/lib/submit-feedback.mjs` contains the submission and verification logic. Regression tests cover the required button context, unconfirmed states, and server failures. The form definition was inspected using read-only authenticated requests; no real feedback was submitted during development.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Interface
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Responsive setup and progress panels, explicit rating selection, per-faculty review, password visibility, accessible labels and focus states, reduced-motion support, and clear confirmed/failed totals. Activity details are available in an expandable log.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The college ERP itself is not modified. This repository is a separate app and needs a Node-compatible host with outbound access to the ERP. Use HTTPS when hosting it.

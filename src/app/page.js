@@ -1,850 +1,561 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import {
-  Terminal,
-  AlertCircle,
-  Loader2,
+  ArrowUpRight,
+  ArrowRight,
+  Check,
   CheckCircle2,
-  Circle,
-  Github,
-  Sparkles,
+  ChevronDown,
+  Eye,
+  EyeOff,
+  GraduationCap,
+  Loader2,
+  LockKeyhole,
+  ShieldCheck,
+  SlidersHorizontal,
+  Star,
 } from "lucide-react";
 
-const INITIAL_STEPS = [
-  { key: "login", label: "Login", progress: 0, detail: "" },
-  { key: "batch", label: "Fetch Batch", progress: 0, detail: "" },
-  { key: "semester", label: "Fetch Semester", progress: 0, detail: "" },
-  { key: "config", label: "Fetch Config", progress: 0, detail: "" },
-  { key: "pending", label: "Find Pending Forms", progress: 0, detail: "" },
-  {
-    key: "submit",
-    label: "Submit Feedback",
-    progress: 0,
-    detail: "0/0",
-    total: 0,
-    completed: 0,
-  },
-];
-
-const FEEDBACK_OPTIONS = [
-  { value: 1, label: "Excellent" },
-  { value: 2, label: "Very Good" },
-  { value: 3, label: "Good" },
-  { value: 4, label: "Fair" },
-  { value: 5, label: "Poor" },
+const RATINGS = ["Excellent", "Very Good", "Good", "Fair", "Poor"];
+const STAGES = [
+  ["login", "Connect to ERP"],
+  ["batch", "Find your batch"],
+  ["semester", "Find your semester"],
+  ["config", "Load feedback session"],
+  ["pending", "Find pending forms"],
+  ["submit", "Submit & verify"],
 ];
 
 export default function HomePage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const [mode, setMode] = useState("set-all");
+  const [rating, setRating] = useState("");
+  const [faculties, setFaculties] = useState(null);
+  const [ratings, setRatings] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [steps, setSteps] = useState({});
   const [logs, setLogs] = useState([]);
   const [error, setError] = useState("");
-  const [steps, setSteps] = useState(INITIAL_STEPS);
-  const [validationError, setValidationError] = useState("");
-
-  const [feedbackMode, setFeedbackMode] = useState("set-all");
-  const [selectedRating, setSelectedRating] = useState(1);
-
-  const [pendingFaculties, setPendingFaculties] = useState([]);
-  const [facultyRatings, setFacultyRatings] = useState({});
-  const [showFacultyRatingModal, setShowFacultyRatingModal] = useState(false);
-
-  const readerRef = useRef(null);
-  const logRef = useRef(null);
-  const endOfLogsRef = useRef(null);
+  const [summary, setSummary] = useState(null);
+  const running = useRef(false);
+  const activityRef = useRef(null);
+  const hasActivity =
+    busy || Boolean(faculties) || Boolean(summary) || Boolean(error);
 
   useEffect(() => {
-    if (endOfLogsRef.current) {
-      endOfLogsRef.current.scrollIntoView({ behavior: "smooth" });
+    if (hasActivity && window.matchMedia("(max-width: 760px)").matches) {
+      // Dismiss the phone keyboard before bringing the next task into view.
+      if (document.activeElement instanceof HTMLElement)
+        document.activeElement.blur();
+      activityRef.current?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "instant"
+          : "smooth",
+        block: "start",
+      });
     }
-  }, [logs]);
+  }, [busy, faculties, summary, error, hasActivity]);
 
-  const resetUI = () => {
-    setLogs([]);
+  async function run(event, customRatings = null) {
+    event.preventDefault();
+    if (running.current) return;
+    running.current = true;
+    setBusy(true);
     setError("");
-    setValidationError("");
-    setSteps(INITIAL_STEPS.map((s) => ({ ...s })));
-    setPendingFaculties([]);
-    setFacultyRatings({});
-    setShowFacultyRatingModal(false);
-  };
-
-  const updateStep = (evt) => {
-    setSteps((prev) =>
-      prev.map((s) =>
-        s.key === evt.step
-          ? {
-              ...s,
-              progress:
-                typeof evt.progress === "number" ? evt.progress : s.progress,
-              detail:
-                evt.step === "submit" &&
-                evt.total != null &&
-                evt.completed != null
-                  ? `${evt.completed}/${evt.total}`
-                  : evt.message ?? s.detail,
-              total: evt.total ?? s.total,
-              completed: evt.completed ?? s.completed,
-            }
-          : s
-      )
-    );
-  };
-
-  const processStream = async (reader) => {
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-
-        let evt;
-
-        try {
-          evt = JSON.parse(line);
-        } catch {
-          continue;
-        }
-
-        if (evt.type === "status") {
-          updateStep(evt);
-
-          if (evt.message) {
-            setLogs((l) => [...l, evt.message]);
-          }
-        } else if (evt.type === "log") {
-          setLogs((l) => [...l, evt.message]);
-        } else if (evt.type === "need_ratings") {
-          setPendingFaculties(evt.faculties);
-
-          const initialRatings = {};
-
-          evt.faculties.forEach((faculty) => {
-            initialRatings[faculty.id] = 1;
-          });
-
-          setFacultyRatings(initialRatings);
-          setShowFacultyRatingModal(true);
-          setIsLoading(false);
-        } else if (evt.type === "error") {
-          setError(evt.message || "Unknown error");
-          setIsLoading(false);
-        } else if (evt.type === "done") {
-          if (Array.isArray(evt.logs)) {
-            setLogs(evt.logs);
-          }
-
-          setIsLoading(false);
-        }
-      }
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!username.trim() || !password.trim()) {
-      setValidationError(
-        "Please enter both username and password before starting automation."
-      );
-      return;
-    }
-
-    resetUI();
-    setIsLoading(true);
-
+    setSummary(null);
+    setLogs([]);
+    setSteps({});
+    let terminal = false;
     try {
-      const requestBody = {
-        username,
-        password,
-        feedbackMode,
-        rating: feedbackMode === "set-all" ? selectedRating : null,
-      };
-
       const response = await fetch("/api/automate", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username,
+          password,
+          feedbackMode: mode,
+          rating: Number(rating),
+          facultyRatings: customRatings,
+        }),
       });
-
-      if (!response.body) {
-        throw new Error(
-          "Streaming not supported by the browser/environment."
-        );
+      if (!response.ok) {
+        const body = await response.json();
+        throw new Error(body.error || "Unable to start. Please try again.");
       }
-
+      if (!response.body)
+        throw new Error("This browser cannot stream progress.");
       const reader = response.body.getReader();
-
-      readerRef.current = reader;
-
-      await processStream(reader);
-    } catch (err) {
-      setError(err.message || "Failed to connect to the server.");
-      setIsLoading(false);
-    } finally {
-      try {
-        await readerRef.current?.cancel();
-      } catch {}
-    }
-  };
-
-  const handleConfirmRatings = async () => {
-    setShowFacultyRatingModal(false);
-    setIsLoading(true);
-
-    try {
-      const requestBody = {
-        username,
-        password,
-        feedbackMode: "custom",
-        facultyRatings,
-      };
-
-      const response = await fetch("/api/automate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.body) {
-        throw new Error(
-          "Streaming not supported by the browser/environment."
-        );
+      const decoder = new TextDecoder();
+      let buffer = "";
+      function receive(line) {
+        if (!line.trim()) return;
+        const item = JSON.parse(line);
+        if (item.type === "status")
+          setSteps((previous) => ({ ...previous, [item.step]: item }));
+        if (item.type === "log")
+          setLogs((previous) => [...previous, item.message]);
+        if (item.type === "need_ratings") {
+          terminal = true;
+          setFaculties(item.faculties);
+          setRatings({});
+        }
+        if (item.type === "error") {
+          terminal = true;
+          setError(item.message);
+        }
+        if (item.type === "done") {
+          terminal = true;
+          setSummary(item.summary);
+          setFaculties(null);
+          setPassword("");
+          if (item.logs) setLogs(item.logs);
+        }
       }
-
-      const reader = response.body.getReader();
-
-      readerRef.current = reader;
-
-      await processStream(reader);
-    } catch (err) {
-      setError(err.message || "Failed to submit ratings.");
-      setIsLoading(false);
-    } finally {
       try {
-        await readerRef.current?.cancel();
-      } catch {}
+        while (true) {
+          const { value, done } = await reader.read();
+          buffer += done
+            ? decoder.decode()
+            : decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          lines.forEach(receive);
+          if (done) {
+            receive(buffer);
+            break;
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      if (!terminal)
+        throw new Error(
+          "Connection ended before results were confirmed. Reconnect to check remaining forms.",
+        );
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+      running.current = false;
     }
-  };
+  }
 
-  const StepRow = ({ label, progress, detail }) => {
-    const statusIcon =
-      progress >= 100 ? (
-        <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-      ) : progress > 0 ? (
-        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-blue-400" />
-      ) : (
-        <Circle className="h-4 w-4 shrink-0 text-gray-400" />
-      );
-
-    return (
-      <div className="w-full min-w-0 space-y-1">
-        <div className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            {statusIcon}
-
-            <span className="min-w-0 break-words font-medium text-gray-900">
-              {label}
-            </span>
-          </div>
-
-          <div className="flex min-w-0 items-center gap-2 pl-6 sm:pl-0">
-            {detail && (
-              <span className="min-w-0 break-words text-xs text-gray-600 sm:truncate">
-                {detail}
-              </span>
-            )}
-
-            <span className="shrink-0 whitespace-nowrap text-xs tabular-nums font-semibold text-gray-600">
-              {Math.min(progress, 100)}%
-            </span>
-          </div>
-        </div>
-
-        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
-          <div
-            className="absolute inset-y-0 left-0 bg-gradient-to-r from-[#d66d75] to-[#e29587] transition-all duration-500"
-            style={{
-              width: `${Math.min(progress, 100)}%`,
-            }}
-          ></div>
-        </div>
-      </div>
-    );
-  };
+  const complete = summary && summary.failed === 0;
+  const progress = Math.round(
+    STAGES.reduce((sum, [key]) => sum + (steps[key]?.progress || 0), 0) /
+      STAGES.length,
+  );
+  const ready = faculties?.every((faculty) => ratings[faculty.id]);
 
   return (
-    <div className="min-h-screen relative overflow-hidden">
-      {/* Background */}
-      <div className="absolute inset-0 bg-gray-50">
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: `
-              linear-gradient(to right, rgba(59, 130, 246, 0.1) 1px, transparent 1px),
-              linear-gradient(to bottom, rgba(59, 130, 246, 0.1) 1px, transparent 1px)
-            `,
-            backgroundSize: "20px 20px",
-          }}
-        />
+    <div className="app-shell">
+      <header className="site-header">
+        <a className="brand" href="/">
+          <span className="brand-icon">
+            <GraduationCap size={23} />
+          </span>
+          <span>
+            feedback<span className="brand-light"> / automator</span>
+          </span>
+        </a>
+        <a
+          className="text-link"
+          href="https://github.com/Nandith-0777/feedback-automator"
+          target="_blank"
+          rel="noreferrer"
+        >
+          View source <ArrowUpRight size={16} />
+        </a>
+      </header>
+      <main>
+        <section className="intro">
+          <div className="eyebrow">
+            <span /> BUILT FOR VIDYA STUDENTS
+          </div>
+          <h1>
+            <span className="desktop-title">Less clicking.</span>
+            <span className="mobile-title">Feedback, simplified.</span>
+            <br className="hero-break" />
+            <span className="desktop-title">More time for you.</span>
+          </h1>
+          <p>
+            <span className="desktop-title">
+              Your feedback, without the repetitive forms. Choose your ratings
+              and let us handle each submission to Vidya ERP.
+            </span>
+            <span className="mobile-title">
+              Choose your ratings. We’ll handle the forms.
+            </span>
+          </p>
+          <div className="intro-notes">
+            <span>
+              <CheckCircle2 size={16} /> Automatic submission
+            </span>
+            <span>
+              <ShieldCheck size={16} /> ERP confirmation checked
+            </span>
+          </div>
+        </section>
 
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: `
-              linear-gradient(to right, rgba(59, 130, 246, 0.2) 1px, transparent 1px),
-              linear-gradient(to bottom, rgba(59, 130, 246, 0.2) 1px, transparent 1px)
-            `,
-            backgroundSize: "100px 100px",
-          }}
-        />
-
-        <div className="absolute inset-0 opacity-[0.15]">
-          <svg
-            width="100%"
-            height="100%"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <pattern
-              id="blueprint-marks"
-              x="0"
-              y="0"
-              width="100"
-              height="100"
-              patternUnits="userSpaceOnUse"
-            >
-              <text x="5" y="10" className="text-[6px] fill-blue-500">
-                100
-              </text>
-
-              <text x="105" y="10" className="text-[6px] fill-blue-500">
-                200
-              </text>
-
-              <text x="205" y="10" className="text-[6px] fill-blue-500">
-                300
-              </text>
-
-              <text x="2" y="105" className="text-[6px] fill-blue-500">
-                100
-              </text>
-
-              <text x="2" y="205" className="text-[6px] fill-blue-500">
-                200
-              </text>
-
-              <text x="2" y="305" className="text-[6px] fill-blue-500">
-                300
-              </text>
-
-              <circle
-                cx="100"
-                cy="100"
-                r="2"
-                className="fill-blue-500/30"
-              />
-
-              <circle
-                cx="200"
-                cy="200"
-                r="2"
-                className="fill-blue-500/30"
-              />
-
-              <circle
-                cx="300"
-                cy="300"
-                r="2"
-                className="fill-blue-500/30"
-              />
-            </pattern>
-
-            <rect
-              width="100%"
-              height="100%"
-              fill="url(#blueprint-marks)"
-            />
-          </svg>
-        </div>
-
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(203,213,225,0.33),transparent_70%)]" />
-      </div>
-
-      <main className="relative flex min-h-screen w-full items-center justify-center p-3 sm:p-4">
-        <div className="w-full min-w-0 max-w-6xl">
-          <div className="relative">
-            <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-[2rem] opacity-20 blur-2xl transition-opacity duration-1000"></div>
-
-            <div className="relative w-full min-w-0 overflow-hidden rounded-[2rem] border border-white/20 bg-white/30 shadow-xl backdrop-blur-2xl">
-              {/* Header */}
-              <div className="p-4 sm:p-8">
-                <div className="flex flex-col items-center justify-center gap-3 text-center">
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl blur-lg opacity-50"></div>
-                  </div>
-
-                  <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">
-                    Vidya Feedback Automator
-                  </h1>
-                </div>
+        <div className={`workspace ${hasActivity ? "has-activity" : ""}`}>
+          <section className="panel setup">
+            <div className="panel-heading">
+              <div className="step-number">01</div>
+              <div>
+                <h2>Your feedback</h2>
+                <p>Connect your account and choose your ratings.</p>
               </div>
-
-              <div className="p-4 sm:p-8">
-                <div className="grid w-full min-w-0 gap-6 lg:grid-cols-2 lg:gap-8">
-                  {/* LEFT COLUMN */}
-                  <div className="min-w-0 space-y-6">
-                    {validationError && (
-                      <div className="relative animate-in fade-in slide-in-from-top-4 duration-500">
-                        <div className="absolute -inset-1 bg-gradient-to-r from-red-400 to-pink-400 rounded-2xl opacity-30 blur-xl"></div>
-
-                        <Alert
-                          variant="destructive"
-                          className="relative backdrop-blur-xl bg-red-500/20 border-2 border-red-400/50 shadow-lg shadow-red-500/10"
-                        >
-                          <AlertCircle className="h-5 w-5" />
-
-                          <AlertTitle className="font-semibold text-base">
-                            Login Required
-                          </AlertTitle>
-
-                          <AlertDescription className="text-sm">
-                            {validationError}
-                          </AlertDescription>
-                        </Alert>
-                      </div>
-                    )}
-
-                    {/* Login / Settings Card */}
-                    <div className="relative">
-                      <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl opacity-0 blur transition-opacity duration-500"></div>
-
-                      <div className="relative w-full min-w-0 rounded-2xl border border-white/30 bg-white/20 p-4 shadow-lg backdrop-blur-xl sm:p-6">
-                        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                          <div className="h-2 w-2 bg-emerald-400 rounded-full animate-pulse shadow-lg shadow-emerald-400/30"></div>
-                          Login Credentials
-                        </h2>
-
-                        <div className="space-y-4">
-                          {/* Username */}
-                          <div className="relative">
-                            <Input
-                              type="text"
-                              value={username}
-                              onChange={(e) => {
-                                setUsername(e.target.value);
-                                setValidationError("");
-                              }}
-                              autoCapitalize="none"
-                              autoCorrect="off"
-                              spellCheck={false}
-                              placeholder="ERP Username"
-                              className="w-full backdrop-blur-sm bg-white/30 border-white/20 text-gray-900 placeholder:text-gray-500 focus:bg-white/40 focus:border-white/30 transition-all"
-                            />
-                          </div>
-
-                          {/* Password */}
-                          <div className="relative">
-                            <Input
-                              type="password"
-                              value={password}
-                              onChange={(e) => {
-                                setPassword(e.target.value);
-                                setValidationError("");
-                              }}
-                              autoCapitalize="none"
-                              autoCorrect="off"
-                              spellCheck={false}
-                              placeholder="ERP Password"
-                              className="w-full backdrop-blur-sm bg-white/30 border-white/20 text-gray-900 placeholder:text-gray-500 focus:bg-white/40 focus:border-white/30 transition-all"
-                            />
-                          </div>
-
-                          {/* Feedback Mode */}
-                          <div className="space-y-3 pt-2">
-                            <label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                              <Sparkles className="h-4 w-4 text-purple-500" />
-                              Feedback Mode
-                            </label>
-
-                            <div className="space-y-3">
-                              {/* Set All */}
-                              <label
-                                className={`relative flex items-start gap-3 cursor-pointer p-3 rounded-lg border-2 transition-all ${
-                                  feedbackMode === "set-all"
-                                    ? "border-blue-400 bg-blue-50/50"
-                                    : "border-white/30 bg-white/10 hover:bg-white/20"
-                                }`}
-                              >
-                                <input
-                                  type="radio"
-                                  name="feedbackMode"
-                                  value="set-all"
-                                  checked={feedbackMode === "set-all"}
-                                  onChange={(e) =>
-                                    setFeedbackMode(e.target.value)
-                                  }
-                                  className="mt-0.5 w-4 h-4 text-blue-600 shrink-0"
-                                />
-
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-gray-900 text-sm">
-                                    Set same rating for all
-                                  </div>
-
-                                  <div className="text-xs text-gray-600 mt-0.5 break-words">
-                                    Quick mode: Apply one rating to every
-                                    faculty
-                                  </div>
-                                </div>
-                              </label>
-
-                              {/* Custom */}
-                              <label
-                                className={`relative flex items-start gap-3 cursor-pointer p-3 rounded-lg border-2 transition-all ${
-                                  feedbackMode === "custom"
-                                    ? "border-purple-400 bg-purple-50/50"
-                                    : "border-white/30 bg-white/10 hover:bg-white/20"
-                                }`}
-                              >
-                                <input
-                                  type="radio"
-                                  name="feedbackMode"
-                                  value="custom"
-                                  checked={feedbackMode === "custom"}
-                                  onChange={(e) =>
-                                    setFeedbackMode(e.target.value)
-                                  }
-                                  className="mt-0.5 w-4 h-4 text-purple-600 shrink-0"
-                                />
-
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-gray-900 text-sm">
-                                    Customize per faculty
-                                  </div>
-
-                                  <div className="text-xs text-gray-600 mt-0.5 break-words">
-                                    Choose individual ratings for each faculty
-                                    member
-                                  </div>
-                                </div>
-                              </label>
-                            </div>
-                          </div>
-
-                          {/* Rating */}
-                          {feedbackMode === "set-all" && (
-                            <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                              <label className="text-sm font-medium text-gray-900 flex items-center gap-2">
-                                <CheckCircle2 className="h-4 w-4 text-green-500" />
-                                Select Rating
-                              </label>
-
-                              <div className="relative">
-                                <select
-                                  value={selectedRating}
-                                  onChange={(e) =>
-                                    setSelectedRating(
-                                      Number(e.target.value)
-                                    )
-                                  }
-                                  className="w-full backdrop-blur-sm bg-white/40 border-2 border-blue-200 text-gray-900 rounded-lg px-4 py-3 font-medium focus:bg-white/50 focus:border-blue-400 transition-all appearance-none cursor-pointer shadow-sm"
-                                >
-                                  {FEEDBACK_OPTIONS.map((option) => (
-                                    <option
-                                      key={option.value}
-                                      value={option.value}
-                                    >
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-
-                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                                  <svg
-                                    className="h-5 w-5 text-gray-600"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M19 9l-7 7-7-7"
-                                    />
-                                  </svg>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Start Button */}
-                          <Button
-                            onClick={handleSubmit}
-                            className="relative w-full bg-gradient-to-r from-[#d66d75] to-[#e29587] hover:from-[#d66d75]/90 hover:to-[#e29587]/90 text-white overflow-hidden rounded-lg"
-                            disabled={isLoading}
-                          >
-                            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
-
-                            {isLoading ? (
-                              <>
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                Automating...
-                              </>
-                            ) : (
-                              <>Start Automation</>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
+            </div>
+            <form onSubmit={(event) => run(event)}>
+              <fieldset disabled={busy || Boolean(faculties)}>
+                <label htmlFor="username">ERP username</label>
+                <input
+                  id="username"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  placeholder="e.g. TL24BTAI0000"
+                  autoComplete="username"
+                  required
+                  spellCheck={false}
+                  autoCapitalize="characters"
+                  enterKeyHint="next"
+                />
+                <div className="label-row">
+                  <label htmlFor="password">Password</label>
+                  <span>Your ERP login password</span>
+                </div>
+                <div className="password-field">
+                  <input
+                    id="password"
+                    type={visible ? "text" : "password"}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="current-password"
+                    required
+                    placeholder="Enter password"
+                    enterKeyHint="done"
+                  />
+                  <button
+                    type="button"
+                    aria-label={visible ? "Hide password" : "Show password"}
+                    onClick={() => setVisible(!visible)}
+                  >
+                    {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                <div className="section-divider" />
+                <label>How would you like to rate?</label>
+                <div
+                  className="mode-options"
+                  role="group"
+                  aria-label="Rating mode"
+                >
+                  <button
+                    type="button"
+                    className={mode === "set-all" ? "mode selected" : "mode"}
+                    aria-pressed={mode === "set-all"}
+                    onClick={() => setMode("set-all")}
+                  >
+                    <Star size={19} />
+                    <strong>Same for everyone</strong>
+                    <small>One rating across all forms</small>
+                    <span className="radio-dot" />
+                  </button>
+                  <button
+                    type="button"
+                    className={mode === "custom" ? "mode selected" : "mode"}
+                    aria-pressed={mode === "custom"}
+                    onClick={() => setMode("custom")}
+                  >
+                    <SlidersHorizontal size={19} />
+                    <strong>By faculty</strong>
+                    <small>Choose for each teacher</small>
+                    <span className="radio-dot" />
+                  </button>
+                </div>
+                {mode === "set-all" ? (
+                  <>
+                    <label htmlFor="rating">Your rating</label>
+                    <div className="select-wrap">
+                      <select
+                        id="rating"
+                        value={rating}
+                        onChange={(event) => setRating(event.target.value)}
+                        required
+                      >
+                        <option value="" disabled>
+                          Choose a rating
+                        </option>
+                        {RATINGS.map((label, index) => (
+                          <option key={label} value={index + 1}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown size={17} />
                     </div>
-
-                    {/* Progress Tracker */}
-                    <div className="relative">
-                      <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-2xl opacity-0 blur transition-opacity duration-500"></div>
-
-                      <div className="relative w-full min-w-0 overflow-hidden backdrop-blur-xl bg-white/20 rounded-2xl border border-white/30 shadow-lg p-4 sm:p-6">
-                        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                          <div className="h-2 w-2 bg-blue-400 rounded-full animate-pulse shadow-lg shadow-blue-400/30"></div>
-                          Progress Tracker
-                        </h2>
-
-                        <div className="w-full min-w-0 space-y-3">
-                          {steps.map((s) => (
-                            <StepRow
-                              key={s.key}
-                              label={s.label}
-                              progress={s.progress}
-                              detail={s.detail}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Error */}
-                    {error && (
-                      <div className="relative animate-in fade-in slide-in-from-top-2 duration-300">
-                        <div className="absolute -inset-0.5 bg-gradient-to-r from-red-500 to-pink-500 rounded-2xl opacity-20 blur"></div>
-
-                        <div className="relative backdrop-blur-xl bg-red-500/10 border border-red-500/30 rounded-2xl p-4 shadow-lg overflow-hidden">
-                          <div className="flex gap-3 min-w-0">
-                            <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
-
-                            <div className="min-w-0">
-                              <h3 className="font-semibold text-red-700 mb-1">
-                                Error Occurred
-                              </h3>
-
-                              <p className="text-sm text-red-600 break-words">
-                                {error}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* RIGHT COLUMN */}
-                  <div className="relative min-w-0">
-                    {showFacultyRatingModal ? (
-                      <div className="relative w-full min-w-0 overflow-hidden rounded-2xl border border-white/30 bg-white/20 shadow-lg animate-in fade-in slide-in-from-right-4 duration-500">
-                        {/* Faculty Header */}
-                        <div className="backdrop-blur-xl bg-gradient-to-r from-purple-500/10 to-pink-500/10 border-b border-white/20 px-4 py-5 sm:px-6">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center shadow-lg">
-                              <Sparkles className="h-5 w-5 text-white" />
-                            </div>
-
-                            <div className="min-w-0">
-                              <h2 className="text-gray-900 font-bold text-lg break-words">
-                                Customize Faculty Ratings
-                              </h2>
-
-                              <p className="text-sm text-gray-600">
-                                Found {pendingFaculties.length} faculty
-                                members
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="p-4 sm:p-6">
-                          <ScrollArea className="h-[400px] pr-4">
-                            <div className="space-y-3">
-                              {pendingFaculties.map((faculty, index) => (
-                                <div
-                                  key={faculty.id}
-                                  className="relative group"
-                                >
-                                  <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-400 to-pink-400 rounded-xl opacity-0 group-hover:opacity-20 blur transition-opacity duration-300"></div>
-
-                                  <div className="relative backdrop-blur-sm bg-white/40 rounded-xl p-4 border border-white/30 hover:border-purple-300 transition-all shadow-sm hover:shadow-md overflow-hidden">
-                                    <div className="flex items-start gap-3 mb-3 min-w-0">
-                                      <div className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                                        {index + 1}
-                                      </div>
-
-                                      <div className="flex-1 min-w-0">
-                                        <div className="font-semibold text-gray-900 truncate">
-                                          {faculty.name}
-                                        </div>
-
-                                        <div className="text-xs text-gray-600 mt-0.5 truncate">
-                                          {faculty.course}
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    <div className="relative w-full min-w-0">
-                                      <select
-                                        value={
-                                          facultyRatings[faculty.id] || 1
-                                        }
-                                        onChange={(e) =>
-                                          setFacultyRatings({
-                                            ...facultyRatings,
-                                            [faculty.id]: Number(
-                                              e.target.value
-                                            ),
-                                          })
-                                        }
-                                        className="w-full min-w-0 backdrop-blur-sm bg-white/50 border-2 border-purple-200 text-gray-900 rounded-lg px-3 py-2.5 text-sm font-medium focus:border-purple-400 focus:bg-white/60 transition-all appearance-none cursor-pointer"
-                                      >
-                                        {FEEDBACK_OPTIONS.map((option) => (
-                                          <option
-                                            key={option.value}
-                                            value={option.value}
-                                          >
-                                            {option.label}
-                                          </option>
-                                        ))}
-                                      </select>
-
-                                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                                        <svg
-                                          className="h-4 w-4 text-gray-600"
-                                          fill="none"
-                                          viewBox="0 0 24 24"
-                                          stroke="currentColor"
-                                        >
-                                          <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth={2}
-                                            d="M19 9l-7 7-7-7"
-                                          />
-                                        </svg>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </ScrollArea>
-
-                          <div className="mt-6 pt-4 border-t border-white/20">
-                            <Button
-                              onClick={handleConfirmRatings}
-                              className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold py-3 shadow-lg shadow-purple-500/30 hover:shadow-xl hover:shadow-purple-500/40 transition-all"
-                            >
-                              <CheckCircle2 className="mr-2 h-5 w-5" />
-                              Confirm & Continue
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
+                    <p className="field-note">
+                      Applied to every question in each pending form.
+                    </p>
+                  </>
+                ) : (
+                  <p className="field-note custom-note">
+                    First, we’ll find your pending forms. Then you can choose a
+                    rating for each faculty member.
+                  </p>
+                )}
+                <div className="submit-actions">
+                  <button className="primary-button" type="submit">
+                    {busy ? (
+                      <>
+                        <Loader2 className="spin" size={18} /> Working on your
+                        feedback…
+                      </>
                     ) : (
-                      /* Automation Log */
-                      <div className="relative w-full min-w-0 overflow-hidden rounded-2xl border border-white/30 bg-white/20 shadow-lg">
-                        <div className="backdrop-blur-xl bg-white/30 border-b border-white/20 px-4 py-4 sm:px-6 flex items-center gap-3 min-w-0">
-                          <Terminal className="h-5 w-5 shrink-0 text-emerald-400" />
-
-                          <h2 className="text-gray-900 font-semibold truncate">
-                            Automation Log
-                          </h2>
-
-                          <div className="ml-auto flex gap-2 shrink-0">
-                            <div className="h-3 w-3 rounded-full bg-red-500 shadow-lg shadow-red-500/20"></div>
-                            <div className="h-3 w-3 rounded-full bg-yellow-500 shadow-lg shadow-yellow-500/20"></div>
-                            <div className="h-3 w-3 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/20"></div>
-                          </div>
-                        </div>
-
-                        <div className="min-w-0 bg-transparent p-4 sm:p-6">
-                          <ScrollArea
-                            className="h-[400px] sm:h-[500px]"
-                            ref={logRef}
-                          >
-                            <pre className="max-w-full overflow-hidden text-sm font-mono text-gray-800 whitespace-pre-wrap break-words leading-relaxed">
-                              {logs.length > 0 ? (
-                                logs.join("\n")
-                              ) : (
-                                <span className="text-gray-400">
-                                  $ Waiting for automation to start...
-                                </span>
-                              )}
-                            </pre>
-
-                            <div ref={endOfLogsRef} />
-                          </ScrollArea>
-                        </div>
-                      </div>
+                      <>
+                        {mode === "custom"
+                          ? "Find my feedback forms"
+                          : "Submit my feedback"}
+                        <ArrowRight size={18} />
+                      </>
                     )}
-                  </div>
+                  </button>
+                  <p className="submit-note">
+                    {mode === "set-all"
+                      ? "This submits your selected rating to ERP automatically."
+                      : "You’ll review your ratings before submitting."}
+                  </p>
+                </div>
+              </fieldset>
+            </form>
+            <div className="privacy-note">
+              <LockKeyhole size={16} />
+              <p>
+                Credentials are used for this request and aren’t saved by this
+                app.
+              </p>
+            </div>
+          </section>
+
+          <section
+            ref={activityRef}
+            className="panel activity"
+            aria-label="Feedback progress"
+            tabIndex={-1}
+          >
+            <div className="activity-heading">
+              <div className="panel-heading">
+                <div className="step-number">02</div>
+                <div>
+                  <h2>
+                    {faculties
+                      ? "Your faculty, your ratings"
+                      : "We’ll take it from here"}
+                  </h2>
+                  <p>
+                    {faculties
+                      ? `${faculties.length} pending forms ready to review.`
+                      : "Follow every step, from login to confirmed submission."}
+                  </p>
                 </div>
               </div>
+              <span className={`status-pill ${busy ? "active" : ""}`}>
+                {busy
+                  ? "In progress"
+                  : faculties
+                    ? "Your turn"
+                    : summary
+                      ? complete
+                        ? "Complete"
+                        : "Needs attention"
+                      : "Ready when you are"}
+              </span>
             </div>
-          </div>
-
-          {/* GitHub */}
-          <div className="mt-8 flex justify-center">
-            <div className="relative">
-              <div className="absolute -inset-1 bg-gradient-to-r from-gray-600 to-gray-800 rounded-xl opacity-0 blur transition-opacity duration-300"></div>
-
-              <Button
-                onClick={() =>
-                  window.open(
-                    "https://github.com/NivinLouis/feedback-automator",
-                    "_blank"
-                  )
-                }
-                className="relative backdrop-blur-md bg-white/30 border border-white/20 text-gray-900 shadow-md hover:bg-white/40 transition-all transform hover:scale-105"
+            {error && (
+              <div className="result error" role="alert">
+                <strong>We couldn’t finish</strong>
+                <p>{error}</p>
+              </div>
+            )}
+            {summary && (
+              <div
+                className={`result ${complete ? "success" : "error"}`}
+                role="status"
               >
-                <Github className="h-4 w-4 mr-2" />
-                View on GitHub
-              </Button>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="mt-6 flex justify-center">
-            <img
-              src="ondotfooter.png"
-              alt="App Logo"
-              className="h-12 w-auto opacity-80 hover:opacity-100 transition-opacity"
-            />
-          </div>
+                <strong>
+                  {complete
+                    ? summary.total
+                      ? "Your feedback is submitted."
+                      : "You’re all caught up."
+                    : "Some forms need another try."}
+                </strong>
+                <p>
+                  {summary.completed} confirmed · {summary.failed} failed
+                  {!summary.total && " · No pending forms found"}
+                </p>
+              </div>
+            )}
+            {faculties ? (
+              <form onSubmit={(event) => run(event, ratings)}>
+                <div className="faculty-list">
+                  {faculties.map((faculty, index) => (
+                    <div className="faculty-row" key={faculty.id}>
+                      <span className="faculty-number">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <div>
+                        <label htmlFor={`faculty-${faculty.id}`}>
+                          {faculty.name}
+                        </label>
+                        <p>{faculty.course}</p>
+                        <select
+                          id={`faculty-${faculty.id}`}
+                          required
+                          disabled={busy}
+                          value={ratings[faculty.id] || ""}
+                          onChange={(event) =>
+                            setRatings({
+                              ...ratings,
+                              [faculty.id]: Number(event.target.value),
+                            })
+                          }
+                        >
+                          <option value="" disabled>
+                            Choose a rating
+                          </option>
+                          {RATINGS.map((label, i) => (
+                            <option value={i + 1} key={label}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="faculty-actions">
+                  <p className="rating-count" aria-live="polite">
+                    {Object.keys(ratings).length} of {faculties.length} ratings
+                    chosen
+                  </p>
+                  <button className="primary-button" disabled={busy || !ready}>
+                    {busy
+                      ? "Submitting & verifying…"
+                      : `Submit ${faculties.length} feedback forms`}
+                    <ArrowRight size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    className="back-button"
+                    disabled={busy}
+                    onClick={() => setFaculties(null)}
+                  >
+                    Back to setup
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <div className="progress-summary">
+                  <span>
+                    {busy
+                      ? "Making progress"
+                      : summary
+                        ? "Run finished"
+                        : "Submission progress"}
+                  </span>
+                  <strong>{progress}%</strong>
+                </div>
+                <div
+                  className="progress-track"
+                  role="progressbar"
+                  aria-label="Submission progress"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={progress}
+                >
+                  <div style={{ width: `${progress}%` }} />
+                </div>
+                <ol className="steps">
+                  {STAGES.map(([key, label], index) => {
+                    const step = steps[key];
+                    const failed = key === "submit" && summary?.failed > 0;
+                    return (
+                      <li
+                        key={key}
+                        className={
+                          step?.progress === 100 && !failed
+                            ? "step done"
+                            : step?.progress > 0
+                              ? "step current"
+                              : "step"
+                        }
+                      >
+                        <span className="step-indicator">
+                          {step?.progress === 100 && !failed ? (
+                            <Check size={16} />
+                          ) : busy &&
+                            step?.progress > 0 &&
+                            step.progress < 100 ? (
+                            <Loader2 size={16} className="spin" />
+                          ) : (
+                            String(index + 1).padStart(2, "0")
+                          )}
+                        </span>
+                        <div>
+                          <strong>{label}</strong>
+                          <p>
+                            {step?.message ||
+                              [
+                                "Securely connect with your student login",
+                                "Locate the right feedback forms",
+                                "Use your latest semester",
+                                "Check the available feedback session",
+                                "Skip forms already submitted",
+                                "Send your ratings and confirm with ERP",
+                              ][index]}
+                          </p>
+                        </div>
+                        {key === "submit" && step?.total > 0 && (
+                          <span className="count">
+                            {step.completed}/{step.total}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ol>
+                <div className="activity-bottom">
+                  <ShieldCheck size={19} />
+                  <p>
+                    Done means submitted.
+                    <br />
+                    <span>Each form is checked against its status in ERP.</span>
+                  </p>
+                </div>
+              </>
+            )}
+            {logs.length > 0 && (
+              <details className="logs">
+                <summary>View activity details</summary>
+                <pre>{logs.join("\n")}</pre>
+              </details>
+            )}
+          </section>
         </div>
+        <footer>
+          <span>Made for a little less busywork.</span>
+          <a
+            href="https://erp.vidyaacademy.ac.in/#"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open Vidya ERP <ArrowUpRight size={14} />
+          </a>
+        </footer>
       </main>
     </div>
   );
